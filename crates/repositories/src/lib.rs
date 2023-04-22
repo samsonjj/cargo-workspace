@@ -8,6 +8,8 @@ use secrets::SecretsError;
 use thiserror::Error;
 use tokio_postgres::Connection;
 
+pub mod builder;
+
 #[derive(Error, Debug)]
 pub enum DbError {
     #[error("")]
@@ -22,9 +24,11 @@ pub enum DbError {
         source: postgres::Error,
         backtrace: Backtrace,
     },
+    #[error("blah")]
+    DbBlah,
 }
 
-async fn get_connection() -> Result<
+pub async fn get_connection() -> Result<
     (
         tokio_postgres::Client,
         tokio_postgres::Connection<Socket, NoTlsStream>,
@@ -40,6 +44,20 @@ async fn get_connection() -> Result<
     .await?;
 
     Ok((client, connection))
+}
+
+pub async fn get_ready_client() -> Result<tokio_postgres::Client, DbError> {
+    let (client, connection) = get_connection().await?;
+
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+            return Err(DbError::DbBlah);
+        }
+        Ok(())
+    });
+
+    Ok(client)
 }
 
 pub mod comments {

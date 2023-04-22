@@ -1,17 +1,3 @@
-use serde::{Deserialize, Serialize};
-
-#[derive(Deserialize, Serialize, Debug)]
-pub struct Post {
-    pub title: String,
-    pub body: String,
-}
-
-#[derive(Deserialize, Serialize, Debug)]
-pub struct Comment {
-    pub body: String,
-    pub author: String,
-}
-
 pub enum Field {
     Int { name: String, description: String },
 }
@@ -43,7 +29,7 @@ impl DatabaseObjectBuilder {
         self
     }
 
-    pub fn build(&self) {
+    pub fn build(&self) -> String {
         let create_query = format!("CREATE TABLE IF NOT EXISTS {}", self.table_name);
 
         let fields_string = self
@@ -56,13 +42,15 @@ impl DatabaseObjectBuilder {
         let create_query = format!("{create_query} ({fields_string});");
 
         dbg!(&create_query);
+
+        create_query
     }
 }
 
 fn get_field_query_string(field: &Field) -> String {
     match field {
         Field::Int { name, description } => {
-            format!("BIGINT {}", name)
+            format!("{} BIGINT", name)
         }
     }
 }
