@@ -16,15 +16,34 @@ pub struct DatabaseObjectBuilder {
     fields: Vec<Field>,
 }
 
+struct Ent<T> {
+    inner: T,
+    q_create: String,
+}
+
+pub trait EntConfig {
+    fn config(builder: &mut DatabaseObjectBuilder) -> Vec<Field>;
+
+    fn init(&mut self) {
+        let mut builder = DatabaseObjectBuilder::new();
+        Self::config(&mut builder);
+        let create_string = builder.build();
+    }
+}
+
 impl DatabaseObjectBuilder {
-    pub fn new(table_name: &str) -> Self {
+    pub fn new() -> Self {
         return Self {
-            table_name: table_name.to_string(),
+            table_name: "".to_string(),
             fields: vec![],
         };
     }
 
-    pub fn add(&mut self, field: Field) -> &mut Self {
+    pub fn table_name(&mut self, table_name: &str) {
+        self.table_name = table_name.to_string();
+    }
+
+    pub fn field(&mut self, field: Field) -> &mut Self {
         self.fields.push(field);
         self
     }

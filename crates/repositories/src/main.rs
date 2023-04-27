@@ -1,4 +1,4 @@
-use repositories::builder::{DatabaseObjectBuilder, Field};
+use repositories::builder::{DatabaseObjectBuilder, DbObject, Field};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -12,4 +12,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     client.execute(&create_query[..], &[]).await?;
 
     Ok(())
+}
+
+struct PageView {
+    name: String,
+}
+
+impl DbObject for PageView {
+    fn get_fields(builder: &mut DatabaseObjectBuilder) {
+        builder.add(Field::int("Hello", "description test"));
+    }
 }
