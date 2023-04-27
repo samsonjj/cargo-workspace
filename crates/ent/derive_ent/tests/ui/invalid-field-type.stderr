@@ -1,0 +1,7 @@
+error: proc-macro derive panicked
+ --> tests/ui/invalid-field-type.rs:5:10
+  |
+5 | #[derive(Ent)]
+  |          ^^^
+  |
+  = help: message: Unsupported field type "Thing"

@@ -1,0 +1,7 @@
+error: proc-macro derive panicked
+ --> tests/ui/item-is-not-a-struct.rs:4:10
+  |
+4 | #[derive(Ent)]
+  |          ^^^
+  |
+  = help: message: called `Result::unwrap()` on an `Err` value: Error("expected `struct`")
