@@ -2,7 +2,6 @@ use std::net::Ipv4Addr;
 
 use aws_config::{self, meta::region::RegionProviderChain, SdkConfig};
 use aws_sdk_route53 as route53;
-use public_ip;
 use route53::{
     config::Region,
     types::{
@@ -10,30 +9,43 @@ use route53::{
         ChangeBatch,
     },
 };
-use tokio;
+
+#[tokio::main]
+async fn main() {
+    env_logger::builder()
+        .target(env_logger::Target::Stdout)
+        .init();
+
+    let result = run().await;
+    if let Err(e) = result {
+        error!("Error: {}", e);
+    }
+}
+
+use env_logger;
+use log::*;
 
 const HOSTED_ZONE_ID: &str = "ZY20L3SG16SCT";
 
-#[tokio::main]
-async fn main() -> Result<(), &'static str> {
+pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config = get_aws_config().await;
     let client = route53::Client::new(&config);
 
     let ip = public_ip::addr_v4()
         .await
         .ok_or("Error getting public ip.")?;
-    println!("Server address is {}", ip.to_string());
+    debug!("Server address is {}", ip);
 
-    let a_record = get_a_record(&client).await;
-    println!("A record is {:?}", a_record);
+    let a_record = get_a_record(&client).await?;
+    debug!("A record is {:?}", a_record);
 
-    if a_record == Some(ip.to_string()) {
-        println!("IP is already up to date.");
+    if a_record == ip.to_string() {
+        debug!("IP is already up to date.");
         return Ok(());
     }
 
-    update_dns(&client, ip).await;
-    println!("Updated A record to {}", ip.to_string());
+    update_dns(&client, HOSTED_ZONE_ID, "jonathansamson.com", ip).await?;
+    info!("Updated A record to {}", ip);
 
     Ok(())
 }
@@ -42,32 +54,43 @@ async fn get_aws_config() -> SdkConfig {
     let region_provider = RegionProviderChain::first_try(Region::new("us-east-1"))
         .or_default_provider()
         .or_else(Region::new("us-west-2"));
-    let config = aws_config::from_env().region(region_provider).load().await;
-    config
+
+    aws_config::from_env().region(region_provider).load().await
 }
 
-async fn get_a_record(client: &route53::Client) -> Option<String> {
-    let record_sets = client
+async fn get_a_record(client: &route53::Client) -> Result<String, Box<dyn std::error::Error>> {
+    let request = client
         .list_resource_record_sets()
         .hosted_zone_id(HOSTED_ZONE_ID)
+        .start_record_name("jonathansamson.com")
+        .start_record_type(route53::types::RrType::A)
         .max_items(1)
         .send()
-        .await
-        .unwrap()
-        .resource_record_sets;
-    let resource_record = record_sets?
-        .first()?
-        .resource_records
-        .as_ref()?
-        .first()?
-        .value()?
-        .to_string();
-    Some(resource_record)
+        .await?;
+
+    let record_sets = request
+        .resource_record_sets
+        .ok_or("Failed to fetch resource record sets")?;
+
+    let resource_record = record_sets
+        .first()
+        .and_then(|record_set| record_set.resource_records.as_ref())
+        .and_then(|records| records.first())
+        .and_then(|record| record.value.as_ref())
+        .map(String::clone)
+        .ok_or("No resource records present")?;
+
+    Ok(resource_record)
 }
 
-async fn update_dns(client: &route53::Client, ip: Ipv4Addr) {
+async fn update_dns(
+    client: &route53::Client,
+    hosted_zone_id: &str, // HOSTED_ZONE_ID
+    record_name: &str,    // jonathansamson.com
+    ip: Ipv4Addr,
+) -> Result<(), Box<dyn std::error::Error>> {
     let resource_record_set = ResourceRecordSetBuilder::default()
-        .name("jonathansamson.com")
+        .name(record_name)
         .r#type(route53::types::RrType::A)
         .resource_records(
             ResourceRecordBuilder::default()
@@ -76,19 +99,16 @@ async fn update_dns(client: &route53::Client, ip: Ipv4Addr) {
         )
         .ttl(300)
         .build();
-
     let change = ChangeBuilder::default()
         .resource_record_set(resource_record_set)
         .action(route53::types::ChangeAction::Upsert)
         .build();
-
     let change_batch = ChangeBatch::builder().changes(change).build();
-
     client
         .change_resource_record_sets()
-        .hosted_zone_id(HOSTED_ZONE_ID)
+        .hosted_zone_id(hosted_zone_id)
         .change_batch(change_batch)
         .send()
-        .await
-        .unwrap();
+        .await?;
+    Ok(())
 }
