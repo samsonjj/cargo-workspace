@@ -2,6 +2,7 @@ use std::net::Ipv4Addr;
 
 use aws_config::{self, meta::region::RegionProviderChain, SdkConfig};
 use aws_sdk_route53 as route53;
+use const_singleton::ConstSingleton;
 use route53::{
     config::Region,
     types::{
@@ -9,6 +10,12 @@ use route53::{
         ChangeBatch,
     },
 };
+
+use lazy_static::lazy_static;
+lazy_static! {
+    static ref HOSTED_ZONE_IDS: Vec<&'static str> = vec!["ZY20L3SG16SCT", "Z07550552NG0KQSGPGT8L"];
+    static ref EXAMPLE: u8 = 42;
+}
 
 #[tokio::main]
 async fn main() {
@@ -25,8 +32,6 @@ async fn main() {
 use env_logger;
 use log::*;
 
-const HOSTED_ZONE_ID: &str = "ZY20L3SG16SCT";
-
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config = get_aws_config().await;
     let client = route53::Client::new(&config);
@@ -36,16 +41,19 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("Error getting public ip.")?;
     debug!("Server address is {}", ip);
 
-    let a_record = get_a_record(&client).await?;
-    debug!("A record is {:?}", a_record);
+    for hosted_zone_id in HOSTED_ZONE_IDS.iter() {
+        debug!("Processing hosted zone {hosted_zone_id}");
+        let a_record = get_a_record(hosted_zone_id, &client).await?;
+        debug!("A record is {:?}", a_record);
 
-    if a_record == ip.to_string() {
-        debug!("IP is already up to date.");
-        return Ok(());
+        if a_record == ip.to_string() {
+            debug!("IP is already up to date.");
+            continue;
+        }
+
+        update_dns(&client, hosted_zone_id, "jonathansamson.com", ip).await?;
+        info!("Updated A record of {hosted_zone_id} to {ip}");
     }
-
-    update_dns(&client, HOSTED_ZONE_ID, "jonathansamson.com", ip).await?;
-    info!("Updated A record to {}", ip);
 
     Ok(())
 }
@@ -58,10 +66,13 @@ async fn get_aws_config() -> SdkConfig {
     aws_config::from_env().region(region_provider).load().await
 }
 
-async fn get_a_record(client: &route53::Client) -> Result<String, Box<dyn std::error::Error>> {
+async fn get_a_record(
+    hosted_zone_id: &str,
+    client: &route53::Client,
+) -> Result<String, Box<dyn std::error::Error>> {
     let request = client
         .list_resource_record_sets()
-        .hosted_zone_id(HOSTED_ZONE_ID)
+        .hosted_zone_id(hosted_zone_id)
         .start_record_name("jonathansamson.com")
         .start_record_type(route53::types::RrType::A)
         .max_items(1)
