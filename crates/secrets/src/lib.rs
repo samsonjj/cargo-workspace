@@ -1,4 +1,4 @@
-#![feature(error_generic_member_access)]
+// #![feature(error_generic_member_access)]
 
 use std::backtrace::Backtrace;
 use std::fs::read;
@@ -18,13 +18,11 @@ pub enum SecretsError {
     Io {
         #[from]
         source: io::Error,
-        backtrace: Backtrace,
     },
     #[error("error parsing toml file")]
     Toml {
         #[from]
         source: toml::de::Error,
-        backtrace: Backtrace,
     },
     #[error("error accessing key `{0}`")]
     TomlGet(String),
@@ -38,7 +36,6 @@ pub enum SecretsError {
 /// config / secrets in a strongly typed way.
 pub fn get_database_password() -> Result<String> {
     let table = get_secrets_table()?;
-    dbg!(&table);
     Ok(table
         .get("database")
         .ok_or(SecretsError::TomlGet("database".to_string()))?
@@ -66,8 +63,6 @@ fn get_secrets_path() -> Result<std::path::PathBuf> {
         .ok_or(SecretsError::MissingHome)?
         .join(".secrets")
         .join("secrets.toml");
-
-    dbg!(&path);
 
     Ok(path)
 }

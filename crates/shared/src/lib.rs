@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+pub type ResultV1<T> = anyhow::Result<T>;
+
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Post {
     pub title: String,

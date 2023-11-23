@@ -1,27 +1,20 @@
-#![feature(error_generic_member_access)]
-
-use std::backtrace::Backtrace;
-
 use postgres::{tls::NoTlsStream, NoTls, Socket};
 use secrets::SecretsError;
-use thiserror::Error;
-use tokio_postgres::Connection;
+use thiserror;
 
 pub mod builder;
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum DbError {
     #[error("")]
     SecretsError {
         #[from]
         source: SecretsError,
-        backtrace: Backtrace,
     },
     #[error("")]
     PostgresError {
         #[from]
         source: postgres::Error,
-        backtrace: Backtrace,
     },
     #[error("blah")]
     DbBlah,

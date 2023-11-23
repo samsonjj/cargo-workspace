@@ -1,8 +1,9 @@
+use anyhow::{Context, Result};
+use std::collections::HashMap;
 use std::net::Ipv4Addr;
 
 use aws_config::{self, meta::region::RegionProviderChain, SdkConfig};
 use aws_sdk_route53 as route53;
-use const_singleton::ConstSingleton;
 use route53::{
     config::Region,
     types::{
@@ -11,39 +12,58 @@ use route53::{
     },
 };
 
-use lazy_static::lazy_static;
-lazy_static! {
-    static ref HOSTED_ZONE_IDS: Vec<&'static str> = vec!["ZY20L3SG16SCT", "Z07550552NG0KQSGPGT8L"];
-    static ref EXAMPLE: u8 = 42;
+mod logger;
+
+use logger::DbLogger;
+
+fn get_data() -> HashMap<&'static str, &'static str> {
+    let mut map = HashMap::new();
+    map.insert("ZY20L3SG16SCT", "jonathansamson.com");
+    map.insert("Z07550552NG0KQSGPGT8L", "stinkrs.com");
+    map
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     env_logger::builder()
         .target(env_logger::Target::Stdout)
         .init();
 
-    let result = run().await;
-    if let Err(e) = result {
-        error!("Error: {}", e);
-    }
+    run().await
 }
 
 use env_logger;
 use log::*;
 
-pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
+use crate::logger::DomainIpSyncRow;
+
+pub async fn run() -> Result<()> {
+    debug!("start");
+    info!("start!");
+
     let config = get_aws_config().await;
     let client = route53::Client::new(&config);
 
     let ip = public_ip::addr_v4()
         .await
-        .ok_or("Error getting public ip.")?;
+        .context("Error getting public ip.")?;
     debug!("Server address is {}", ip);
 
-    for hosted_zone_id in HOSTED_ZONE_IDS.iter() {
+    for (hosted_zone_id, domain) in get_data().iter() {
+        debug!("{hosted_zone_id}, {domain}");
+
+        DomainIpSyncRow {
+            id: 0,
+            hosted_zone_id: hosted_zone_id.to_string(),
+            domain: domain.to_string(),
+            ip_address: ip.to_string(),
+            timestamp: None,
+        }
+        .gen_log()
+        .await?;
+
         debug!("Processing hosted zone {hosted_zone_id}");
-        let a_record = get_a_record(hosted_zone_id, &client).await?;
+        let a_record = get_a_record(hosted_zone_id, domain, &client).await?;
         debug!("A record is {:?}", a_record);
 
         if a_record == ip.to_string() {
@@ -51,10 +71,24 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         }
 
-        update_dns(&client, hosted_zone_id, "jonathansamson.com", ip).await?;
-        info!("Updated A record of {hosted_zone_id} to {ip}");
+        update_dns(&client, hosted_zone_id, domain, ip).await?;
+        gen_log(hosted_zone_id, domain, ip).await?;
     }
 
+    Ok(())
+}
+
+async fn gen_log(hosted_zone_id: &str, domain: &str, ip: Ipv4Addr) -> Result<()> {
+    info!("Updated A record of {hosted_zone_id} to {ip}");
+    logger::DomainIpSyncRow {
+        id: 0,
+        hosted_zone_id: hosted_zone_id.to_string(),
+        domain: domain.to_string(),
+        ip_address: ip.to_string(),
+        timestamp: None,
+    }
+    .gen_log()
+    .await?;
     Ok(())
 }
 
@@ -68,12 +102,13 @@ async fn get_aws_config() -> SdkConfig {
 
 async fn get_a_record(
     hosted_zone_id: &str,
+    record_name: &str,
     client: &route53::Client,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<String> {
     let request = client
         .list_resource_record_sets()
         .hosted_zone_id(hosted_zone_id)
-        .start_record_name("jonathansamson.com")
+        .start_record_name(record_name)
         .start_record_type(route53::types::RrType::A)
         .max_items(1)
         .send()
@@ -81,7 +116,7 @@ async fn get_a_record(
 
     let record_sets = request
         .resource_record_sets
-        .ok_or("Failed to fetch resource record sets")?;
+        .context("Failed to fetch resource record sets")?;
 
     let resource_record = record_sets
         .first()
@@ -89,7 +124,7 @@ async fn get_a_record(
         .and_then(|records| records.first())
         .and_then(|record| record.value.as_ref())
         .map(String::clone)
-        .ok_or("No resource records present")?;
+        .context("No resource records present")?;
 
     Ok(resource_record)
 }
@@ -99,7 +134,7 @@ async fn update_dns(
     hosted_zone_id: &str, // HOSTED_ZONE_ID
     record_name: &str,    // jonathansamson.com
     ip: Ipv4Addr,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<()> {
     let resource_record_set = ResourceRecordSetBuilder::default()
         .name(record_name)
         .r#type(route53::types::RrType::A)

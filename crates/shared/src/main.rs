@@ -1,4 +1,4 @@
-use shared::{DatabaseObjectBuilder, Field};
+use shared::{DatabaseObjectBuilder, Field, ResultV1};
 
 #[tokio::main]
 async fn main() {

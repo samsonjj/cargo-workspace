@@ -16,3 +16,6 @@ simplelog = "0.12.1"
 tokio = { version = "1.32.0", features = ["rt", "macros"] }
 const_singleton = { path = "../const_singleton" }
 lazy_static = "1.4.0"
+shared = { version = "0.1.0", path = "../shared" }
+dblogger = { version = "0.1.0", path = "../dblogger" }
+anyhow = { version = "1.0.75", features = ["backtrace"] }
